@@ -1,0 +1,74 @@
+# exit on error
+#set -e
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <appname>"
+    exit 1
+fi
+
+export APP=$1
+GROUP=kh-azlinuxcontainer-${APP}
+BUILD=build01
+
+LOC="westeurope"
+
+##------------------------------ Sort out the name restrictions and uniqueness to prevent issues with the script!
+
+# App Service name : 2-60, Alphanumeric or -, (but not begining or ending with -)
+if [[ ! "$APP" =~ ^([[:alnum:]]|-)*$ ]] || [[ "$APP" =~ ^-|-$ ]] || [ ${#APP} -gt 60 ] || [ ${#APP} -lt 2 ] ; then
+    echo 'Application name can only container alpha numeric charactors or "-" (but not begining or ending with "-"), and be between 5-60 long'
+    exit 1
+fi
+
+## --------------------------- Set location and group
+echo "Set default location to [${LOC}]..."
+az configure --defaults location=$LOC
+
+echo "Create group [${GROUP}] and set as default..."
+az  group create -n $GROUP >/dev/null
+az configure --defaults group=$GROUP
+
+## --------------------------- create plan (2-40, alnum & - )
+PLAN="${APP:0:35}-plan"
+echo "Create Linux App Service Plan [${PLAN}]..."
+az appservice plan create  -n ${PLAN} --is-linux --number-of-workers 1 --sku S1 >/dev/null
+
+
+read -r -p "Use App Service built in nodejs Container (b), or Roll your own (r) [b/r]? " response
+if [[ "${response,,}" = "b" ]]; then
+    WAPP="${APP}-builtin"
+    echo "Creating Webapp [${WAPP}] in the Plan, using Built in container"
+    az webapp create -n ${WAPP}  --plan ${PLAN} --runtime "node|8.11" >/dev/null
+
+    echo "zipping app files, and calling zip deploy..."
+    zip -r out.zip *.js
+    az webapp deployment source config-zip  -n $WAPP --src ./out.zip
+    rm out.zip
+fi
+
+if [[ "${response,,}" = "r" ]]; then
+    ##----------------------------- create registry "<REGISTRY>.azurecr.io" (5-50, just alnum)
+    export REGISTRY="${APP:0:45}registry"
+    echo "Create an Azure Container Registry [${REGISTRY}]....."
+    az acr create --name $REGISTRY --sku Basic --admin-enabled true >/dev/null
+
+    REGTAG=${REGISTRY}.azurecr.io/${APP}
+    echo "Creating Container [${REGTAG}]...."
+    docker build -t $APP  .
+    docker tag ${APP}:latest $REGTAG
+
+    echo "Uploading Image [${REGTAG}] to Private registry...."
+    az acr login -n ${REGISTRY}
+    docker push ${REGTAG}
+
+    WAPP="${APP}-rollit"
+    echo "Creating Webapp [${WAPP}] in the Plan, using Custom Container"
+    ## --------------------------- create site "<APP>.azurewebsites.net"  (2-60, alnum & - )
+    az webapp create -n ${WAPP}  --plan ${PLAN} --deployment-container-image-name ${REGTAG}
+    # --deployment-container-image-name ${image} >/dev/null
+    az webapp config container set -n ${WAPP} --docker-custom-image-name ${REGTAG} --docker-registry-server-url https://${REGISTRY}.azurecr.io --docker-registry-server-user  $REGISTRY --docker-registry-server-password $(az acr credential show -n $REGISTRY --query "passwords[0].value" --o tsv)
+    az webapp config appsettings set -n ${WAPP} --settings WEBSITES_PORT=8080
+
+    # https://docs.microsoft.com/en-us/azure/app-service/containers/app-service-linux-cli
+fi
+
