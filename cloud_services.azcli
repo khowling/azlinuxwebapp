@@ -12,6 +12,8 @@ BUILD=build01
 
 LOC="westeurope"
 
+
+
 ##------------------------------ Sort out the name restrictions and uniqueness to prevent issues with the script!
 
 # App Service name : 2-60, Alphanumeric or -, (but not begining or ending with -)
@@ -63,9 +65,10 @@ if [[ "${response,,}" = "r" ]]; then
 
     WAPP="${APP}-rollit"
     echo "Creating Webapp [${WAPP}] in the Plan, using Custom Container"
-    ## --------------------------- create site "<APP>.azurewebsites.net"  (2-60, alnum & - )
-    az webapp create -n ${WAPP}  --plan ${PLAN} --deployment-container-image-name ${REGTAG}
-    # --deployment-container-image-name ${image} >/dev/null
+    ## --------------------------- create empty site "<APP>.azurewebsites.net"  (2-60, alnum & - )
+    ## ISSUE: cannot create webapp with ACR container, track here: https://github.com/Azure/azure-cli/issues/7261
+    az webapp create -n ${WAPP}  --plan ${PLAN} --runtime "node|8.11" >/dev/null
+
     az webapp config container set -n ${WAPP} --docker-custom-image-name ${REGTAG} --docker-registry-server-url https://${REGISTRY}.azurecr.io --docker-registry-server-user  $REGISTRY --docker-registry-server-password $(az acr credential show -n $REGISTRY --query "passwords[0].value" --o tsv)
     az webapp config appsettings set -n ${WAPP} --settings WEBSITES_PORT=8080
 
