@@ -19,5 +19,6 @@ EXPOSE 8080 2222
 
 WORKDIR /home/nodejs/app
 COPY . .
+RUN chmod +x ./init_container.sh
 
 ENTRYPOINT ["/home/nodejs/app/init_container.sh"]
