@@ -4,11 +4,22 @@
 # https://docs.microsoft.com/azure/devops/pipelines/languages/docker
 
 pool:
-  vmImage: 'Ubuntu 16.04'
-
-variables:
-  imageName: 'your-container-image-name:$(build.buildId)'
-
+  name: home
 steps:
-- script: docker build -f Dockerfile -t $(imageName) .
-  displayName: 'docker build'
+- task: ArchiveFiles@2
+  displayName: 'Archive server.js'
+  inputs:
+    rootFolderOrFile: server.js
+    includeRootFolder: false
+    archiveFile: '$(Build.ArtifactStagingDirectory)/out.zip'
+
+- task: CopyFiles@2
+  displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory)'
+  inputs:
+    SourceFolder: .
+    Contents: '*.azcli'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: drop'
+
